@@ -1,7 +1,7 @@
 """Collection of function to create realistic MRI data from brainweb segmentations."""
 
 from __future__ import annotations
-
+from typing import Literal, overload
 import logging
 import os
 
@@ -104,6 +104,42 @@ def _get_mri_sub20(
         affine = np.asarray(nifti.Nifti1Image.from_filename(filename).affine)
     return (data, affine)
 
+@overload
+def get_mri(
+    sub_id: int,
+    contrast: Contrast | Segmentation = Contrast.T1,
+    bbox: tuple[float | None, ...] | None = None,
+    shape: tuple[int, int, int] | None = None,
+    brainweb_dir: BrainWebDirType = None,
+    output_res: float | tuple[float, float, float] | None = None,
+    download_res: int = 1,
+    noise: int = 0,
+    field_value: int = 0,
+    force: bool = False,
+    *,
+    with_affine: Literal[True],
+    tissue_map: GenericPath | None = None,
+    rng: int | np.random.Generator | None = None,
+) -> tuple[NDArray,NDArray]: ...
+
+@overload
+def get_mri(
+    sub_id: int,
+    contrast: Contrast | Segmentation = Contrast.T1,
+    bbox: tuple[float | None, ...] | None = None,
+    shape: tuple[int, int, int] | None = None,
+    brainweb_dir: BrainWebDirType = None,
+    output_res: float | tuple[float, float, float] | None = None,
+    download_res: int = 1,
+    noise: int = 0,
+    field_value: int = 0,
+    force: bool = False,
+    with_affine: Literal[False] = False,
+    tissue_map: GenericPath | None = None,
+    rng: int | np.random.Generator | None = None,
+) -> NDArray: ...
+
+
 
 def get_mri(
     sub_id: int,
@@ -119,7 +155,7 @@ def get_mri(
     with_affine: bool = False,
     tissue_map: GenericPath | None = None,
     rng: int | np.random.Generator | None = None,
-) -> tuple[NDArray, NDArray] | NDArray:
+) -> NDArray | tuple[NDArray, NDArray]:
     """Get MRI data from a brainweb fuzzy segmentation.
 
     Parameters
@@ -153,7 +189,9 @@ def get_mri(
     Returns
     -------
     np.ndarray
-        MRI data.
+        3D or 4D array of the data.
+    np.ndarray
+        Affine matrix of the data if with_affine is True.
     """
     try:
         contrast = Contrast(contrast)
@@ -182,7 +220,6 @@ def get_mri(
             force=force,
             tissue_map=tissue_map or BrainWebTissueMap.v2,
         )
-
     if bbox is not None:
         logger.debug(f"Apply bounding box {bbox} to the data")
         data = _crop_data(data, bbox)
@@ -231,10 +268,12 @@ def get_mri(
     # FIXME: zoom changes the affine matrix.
     else:
         logger.debug(f"Return data with shape {data.shape}")
+
     if with_affine:
         return data, affine
     return data
 
+reveal_type(get_mri(sub_id=4))
 
 def _crop_data(data: np.ndarray, bbox: tuple[float | None, ...]) -> np.ndarray:
     """Crop the 3D data to the bounding box bbox."""
