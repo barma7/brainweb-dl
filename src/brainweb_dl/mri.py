@@ -104,6 +104,7 @@ def _get_mri_sub20(
         affine = np.asarray(nifti.Nifti1Image.from_filename(filename).affine)
     return (data, affine)
 
+
 @overload
 def get_mri(
     sub_id: int,
@@ -120,7 +121,8 @@ def get_mri(
     with_affine: Literal[True],
     tissue_map: GenericPath | None = None,
     rng: int | np.random.Generator | None = None,
-) -> tuple[NDArray,NDArray]: ...
+) -> tuple[NDArray, NDArray]: ...
+
 
 @overload
 def get_mri(
@@ -138,7 +140,6 @@ def get_mri(
     tissue_map: GenericPath | None = None,
     rng: int | np.random.Generator | None = None,
 ) -> NDArray: ...
-
 
 
 def get_mri(
@@ -273,7 +274,6 @@ def get_mri(
         return data, affine
     return data
 
-reveal_type(get_mri(sub_id=4))
 
 def _crop_data(data: np.ndarray, bbox: tuple[float | None, ...]) -> np.ndarray:
     """Crop the 3D data to the bounding box bbox."""

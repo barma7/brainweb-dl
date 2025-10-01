@@ -4,9 +4,8 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-
+from tqdm import tqdm
 import nibabel as nib
-import numpy as np
 
 from ._brainweb import (
     SUB_ID,
@@ -67,9 +66,14 @@ def main() -> None:
     filename: os.PathLike
     brainweb_dir = get_brainweb_dir(ns.brainweb_dir)
     if ns.contrast in ["T1", "T2", "T2*"]:
-        array = get_mri(ns.subject, ns.contrast, brainweb_dir=brainweb_dir)
-        filename = Path(f"brainweb_{ns.subject}_{ns.contrast}.{ns.format}")
-        nib.Nifti1Image(array, np.eye(4)).to_filename(filename)
+        if isinstance(ns.subject, int):
+            ns.subject = [ns.subject]
+        for sid in tqdm(ns.subject):
+            array, affine = get_mri(
+                sid, ns.contrast, brainweb_dir=brainweb_dir, with_affine=True
+            )
+            filename = Path(f"brainweb_{sid}_{ns.contrast}.{ns.extension}")
+            nib.Nifti1Image(array, affine=affine).to_filename(filename)
     elif ns.contrast in ["crisp", "fuzzy"]:
         if ns.subject == 0:
             filename = get_brainweb1_seg(ns.contrast, brainweb_dir=brainweb_dir)
