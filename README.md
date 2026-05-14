@@ -34,7 +34,7 @@ This project provides a **CLI** and a **Python API** to download and convert the
 
 ### Data Location
 
-The cached data directory follows this priority order:
+The BrainWeb cache/download directory follows this priority order:
 
 1. User-specific argument (`brainweb_dir` in most functions)
 2. `BRAINWEB_DIR` environment variable
@@ -57,8 +57,18 @@ The Brainweb dataset is downloaded and cached by default in the `~/.cache/brainw
 ### Command Line Interface
 
 ```bash
-brainweb-dl 44 --contrast=T1
+brainweb-dl 44 --contrast=T1 --output-dir ./brainweb-output
 ```
+
+`--brainweb-dir` controls where native BrainWeb files are cached or reused.
+`--output-dir` controls where the final requested CLI output is saved. When
+`--output-dir` is omitted, the final output is saved in the current working
+directory.
+
+For compatibility with older versions, note that segmentation commands no
+longer treat `--brainweb-dir` as the final output location when `--output-dir`
+is provided. Use `--output-dir` for the directory that should contain the
+requested `T1`, `T2`, `T2*`, `crisp`, or `fuzzy` output file.
 
 For more information, see `brainweb-dl --help`.
 

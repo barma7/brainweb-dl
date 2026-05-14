@@ -90,7 +90,10 @@ def _get_mri_sub20(
         data, affine = np.asarray(nft.get_fdata()), np.asarray(nft.affine)
     elif contrast in Segmentation:
         filename = get_brainweb20(
-            sub_id, segmentation=Segmentation(contrast), force=force
+            sub_id,
+            brainweb_dir=brainweb_dir,
+            segmentation=Segmentation(contrast),
+            force=force,
         )
         nft = nifti.Nifti1Image.from_filename(filename)
         data = np.asanyarray(nft.dataobj, dtype=np.uint16)
@@ -98,7 +101,12 @@ def _get_mri_sub20(
         if contrast is Segmentation.FUZZY:
             data = data.astype(np.float32) / 4095
     else:
-        filename = get_brainweb20(sub_id, segmentation=Segmentation.FUZZY, force=force)
+        filename = get_brainweb20(
+            sub_id,
+            brainweb_dir=brainweb_dir,
+            segmentation=Segmentation.FUZZY,
+            force=force,
+        )
         tissue_map = tissue_map or BrainWebTissueMap.v2
         data = _apply_contrast(filename, tissue_map, Contrast(contrast), rng)
         affine = np.asarray(nifti.Nifti1Image.from_filename(filename).affine)

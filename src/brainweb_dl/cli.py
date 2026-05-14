@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 import argparse
-import os
 from pathlib import Path
 from tqdm import tqdm
-import nibabel as nib
 
 from ._brainweb import (
     SUB_ID,
     get_brainweb1_seg,
-    get_brainweb20_multiple,
+    get_brainweb20,
     get_brainweb_dir,
+    load_array,
+    save_array,
 )
 from .mri import get_mri
 
@@ -39,7 +39,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--brainweb-dir",
         type=Path,
-        help="Brainweb directory, overrides the environment variable BRAINWEB_DIR",
+        help=(
+            "BrainWeb cache/download directory, overrides the environment variable "
+            "BRAINWEB_DIR"
+        ),
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        help="Directory for final CLI output files. Default: current working directory",
     )
     parser.add_argument(
         "--extension",
@@ -60,36 +68,54 @@ def parse_args() -> argparse.Namespace:
     return ns
 
 
+def _as_subject_list(subject: int | list[int]) -> list[int]:
+    """Normalize parsed subject input to a list."""
+    if isinstance(subject, int):
+        return [subject]
+    return subject
+
+
+def _output_path(output_dir: Path, subject: int, contrast: str, extension: str) -> Path:
+    """Build the final CLI output path."""
+    return output_dir / f"brainweb_{subject}_{contrast}.{extension}"
+
+
 def main() -> None:
     """CLI interface."""
     ns = parse_args()
-    filename: os.PathLike
     brainweb_dir = get_brainweb_dir(ns.brainweb_dir)
+    output_dir = ns.output_dir if ns.output_dir is not None else Path.cwd()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filenames: list[Path] = []
+    subjects = _as_subject_list(ns.subject)
+
     if ns.contrast in ["T1", "T2", "T2*"]:
-        if isinstance(ns.subject, int):
-            ns.subject = [ns.subject]
-        for sid in tqdm(ns.subject):
+        for sid in tqdm(subjects):
             array, affine = get_mri(
                 sid, ns.contrast, brainweb_dir=brainweb_dir, with_affine=True
             )
-            filename = Path(f"brainweb_{sid}_{ns.contrast}.{ns.extension}")
-            nib.Nifti1Image(array, affine=affine).to_filename(filename)
+            filename = _output_path(output_dir, sid, ns.contrast, ns.extension)
+            save_array(array, affine, filename)
+            filenames.append(filename)
     elif ns.contrast in ["crisp", "fuzzy"]:
-        if ns.subject == 0:
-            filename = get_brainweb1_seg(ns.contrast, brainweb_dir=brainweb_dir)
-        else:
-            filename = get_brainweb20_multiple(
-                ns.subject, segmentation=ns.contrast, brainweb_dir=brainweb_dir
-            )
+        for sid in tqdm(subjects):
+            if sid == 0:
+                cache_path = get_brainweb1_seg(ns.contrast, brainweb_dir=brainweb_dir)
+            else:
+                cache_path = get_brainweb20(
+                    sid, segmentation=ns.contrast, brainweb_dir=brainweb_dir
+                )
+            data, affine = load_array(cache_path)
+            filename = _output_path(output_dir, sid, ns.contrast, ns.extension)
+            save_array(data, affine, filename)
+            filenames.append(filename)
     else:
         raise ValueError(f"Unknown contrast {ns.contrast}")
-    if isinstance(filename, list):
-        if len(filename) == 1:
-            print(f"Data saved to {filename[0]}")
-        else:
-            print(f"{len(filename)} files saved to {filename[0].parent}")
+
+    if len(filenames) == 1:
+        print(f"Data saved to {filenames[0]}")
     else:
-        print(f"Data saved to {filename}")
+        print(f"{len(filenames)} files saved to {output_dir}")
 
 
 if __name__ == "__main__":
