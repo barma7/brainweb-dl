@@ -1,0 +1,4 @@
+interface:
+  display_name: "Explain Codebase"
+  short_description: "Read-only answers about code behavior"
+  default_prompt: "Use $explain-codebase to answer a focused question about how this codebase works."

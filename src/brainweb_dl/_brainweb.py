@@ -152,11 +152,43 @@ ALLOWED_RES = (1, 3, 5, 7, 9)
 
 BASE_URL = "http://brainweb.bic.mni.mcgill.ca/cgi/brainweb1/"
 
-BIG_RES_SHAPE = (362, 434, 362)
+# image shape, resolution and transpose for the different types of data. 
+# The original data from brainweb have different axis order either (z, x, y) or (z, y, x)
+# but we want to save it in (x, y, z) order following the RAS+ convention for nifti files. 
+
+# 20 subjects (from sub 4 onwards) 
+BIG_RES_SHAPE = (362, 434, 362) 
 BIG_RES_MM = (0.5, 0.5, 0.5)
-STD_RES_SHAPE = (181, 217, 181)
-STD_RES_MM = (1.0, 1.0, 1.0)
-T1_20_RES_SHAPE = (181, 256, 256)
+BIG_RES_TRANSPOSE = (2, 1, 0) # (z, x, y) --> (x, y, z) for RAS+ indexing. This is critical for the correct orientation of the images. The original data from brainweb is in (z, x, y) order, but we want to save it in (x, y, z) order for nifti files. This transpose ensures that the data is correctly oriented when saved as nifti.
+
+# this is subject 0 and 1, which have a different resolution and shape than the other 20 subjects.
+STD_RES_SHAPE = (181, 217, 181) # (z, x, y) --> need to be converted to RAS+ before saving as nifti.
+STD_RES_MM = (1.0, 1.0, 1.0) 
+STD_RES_TRANSPOSE = (2, 1, 0) # (z, x, y) --> (x, y, z) for RAS+ indexing. This is critical for the correct orientation of the images.
+
+# The T1w image is only available for 1 subject. 
+T1_20_RES_SHAPE = (181, 256, 256) # (z, y, x) --> need to be converted to RAS+ before saving as nifti.
+T1_20_TRANSPOSE = (2, 1, 0)  # (z, y, x) --> (x, y, z) for RAS+ indexing. This is critical for the correct orientation of the images.
+
+
+def _centered_affine(
+    shape: tuple[int, int, int] | tuple[int, int, int, int],
+    resolution_mm: float | tuple[float, float, float],
+    transpose: tuple[int, int, int] | None = None,  
+) -> NDArray:
+    """Create a centered voxel-index to millimeter affine."""
+    if isinstance(resolution_mm, float):
+        resolution = np.array((resolution_mm,) * 3, dtype=np.float32)
+    else:
+        resolution = np.array(resolution_mm, dtype=np.float32)
+    if transpose is not None:
+        shape = tuple(shape[i] for i in transpose)
+    spatial_shape = np.array(shape[:3], dtype=np.float32)
+
+    affine = np.eye(4, dtype=np.float32)
+    affine[:3, :3] = np.diag(resolution)
+    affine[:3, 3] = -0.5 * spatial_shape * resolution
+    return affine
 
 
 def _sub_id(s: int | str) -> int:
@@ -302,7 +334,7 @@ def get_brainweb20(
     if segmentation is Segmentation.CRISP:
         download_command = f"subject{s:02d}_{segmentation}"
         data, affine = _request_get_brainweb(
-            download_command, path, shape=BIG_RES_SHAPE, dtype=np.uint16
+            download_command, path, shape=BIG_RES_SHAPE, transpose=BIG_RES_TRANSPOSE, dtype=np.uint16
         )
         data = data >> 4
         data = data.astype(np.uint8)
@@ -327,6 +359,7 @@ def get_brainweb20(
             brainweb_dir / f"{name}",  # placeholder value
             dtype=np.uint16,
             shape=BIG_RES_SHAPE,
+            transpose=BIG_RES_TRANSPOSE
         )
 
     Parallel(n_jobs=-1, backend="threading")(
@@ -378,8 +411,10 @@ def get_brainweb20_T1(
             brainweb_dir / fname,
             force,
             shape=T1_20_RES_SHAPE,
+            transpose=T1_20_TRANSPOSE,
             dtype=np.uint16,
         )
+    
         return save_array(data, affine, path)
     else:
         return path
@@ -477,6 +512,7 @@ def get_brainweb1_seg(
             brainweb_dir / fname,
             force,
             shape=STD_RES_SHAPE,
+            transpose=STD_RES_TRANSPOSE,
             dtype=np.uint16,
         )
         return save_array(data, affine, path)
@@ -501,6 +537,7 @@ def get_brainweb1_seg(
             path=brainweb_dir / f"{name}.{extension}",  # placeholder
             dtype=np.uint16,
             shape=STD_RES_SHAPE,
+            transpose=STD_RES_TRANSPOSE,
         )
     # Create the 4D volume.
     nifti.save(nifti.Nifti1Image(abs(data), affine=affine), path)
@@ -514,47 +551,24 @@ def _request_get_brainweb_affine(download_cmd: str) -> NDArray:
     if matched:
         type_ = matched.group(2)
         if type_ == "t1w":
-            return np.array(
-                [
-                    [1, 0, 0, -127.75],
-                    [0, 1, 0, -145.75],
-                    [0, 0, 1, -72.25],
-                    [0, 0, 0, 1],
-                ],
-                dtype=np.float32,
-            )
+            return _centered_affine(T1_20_RES_SHAPE, STD_RES_MM, T1_20_TRANSPOSE)
         elif type_ == "crisp" or type_ == "fuzzy":
-            return np.array(
-                [
-                    [0.5, 0, 0, -90.25],
-                    [0, 0.5, 0, -126.25],
-                    [0, 0, 0.5, -72.25],
-                    [0, 0, 0, 1],
-                ],
-                dtype=np.float32,
-            )
+            return _centered_affine(BIG_RES_SHAPE, BIG_RES_MM, BIG_RES_TRANSPOSE)
         else:
             raise ValueError("Unknown match", type_)
 
-    BRAINWEB_1_AFFINE = np.array(
-        [
-            [1, 0, 0, -90],
-            [0, 1, 0, -126],
-            [0, 0, 1, -72],
-            [0, 0, 0, 1],
-        ],
-    )
+    brainweb1_affine = _centered_affine(STD_RES_SHAPE, STD_RES_MM, STD_RES_TRANSPOSE)
     matched = re.match(r"(T1|T2|PD)\+ICBM\+normal", download_cmd)
     if matched:
         if matched.group(1):
-            return BRAINWEB_1_AFFINE
+            return brainweb1_affine
     matched = re.match(r"phantom_1.0mm_normal_", download_cmd)
     if matched:
-        return BRAINWEB_1_AFFINE
+        return brainweb1_affine
 
     if download_cmd == "phantom_1.0mm_normal_crisp":
-        return BRAINWEB_1_AFFINE
-    return np.eye(4)
+        return brainweb1_affine
+    return np.eye(4, dtype=np.float32)
 
 
 def _request_get_brainweb(
@@ -563,6 +577,7 @@ def _request_get_brainweb(
     force: bool = False,
     dtype: DTypeLike = np.float32,
     shape: tuple = STD_RES_SHAPE,
+    transpose: tuple = STD_RES_TRANSPOSE,
 ) -> tuple[NDArray, NDArray]:
     """Request to download brainweb dataset.
 
@@ -578,6 +593,8 @@ def _request_get_brainweb(
         Data type of the downloaded file.
     shape : tuple
         Shape of the downloaded file.
+    transpose : tuple[int, int, int] 
+        Transpose order for the downloaded data to enforce RAS+ indexing.
     obj_mode : bool
         If True, return the downloaded data as a numpy array.
 
@@ -642,9 +659,7 @@ def _request_get_brainweb(
         data = np.frombuffer(gzip.decompress(buffer.getvalue()), dtype=dtype)
     if data.size != np.prod(shape):
         raise ValueError(f"Mismatch between data size and shape {data.size} != {shape}")
-    data = abs(data).reshape(shape)
-
-    # TODO Find the correct affine matrix
+    data = abs(data).reshape(shape).transpose(transpose)
     affine = _request_get_brainweb_affine(download_command)
 
     return (data, affine)

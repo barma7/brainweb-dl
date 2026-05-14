@@ -1,0 +1,38 @@
+schema: spec-driven
+
+context: |
+  Project: brainweb-dl
+  Domain: API for downloading BrainWeb MRI data and saving them in a local directory.
+  Summary: brainweb-dl provides a simple API to download MRI data from the BrainWeb dataset and save it locally.
+
+  Core stack: Python, requests, unittest.
+  Required Python interpreter: C:\Users\marco\.conda\envs\brainweb-dl\python.exe
+  Repository health command:
+    & "C:\Users\marco\.conda\envs\brainweb-dl\python.exe" -m unittest discover -s tests -v
+
+  Development conventions:
+    - Keep README.md user-facing and AGENTS.md as a tiny bootstrap only.
+    - Use OpenSpec for durable requirements, planned changes, design decisions,
+      and implementation task lists.
+    - Maintain Python API and CLI backend for parity whenever behavior changes.
+    - Prefer end-to-end tests for API/CLI behavior and focused tests for internal logic or edge cases.
+    - Keep the number of tests low so that they can be reviewed and maintained by a single person.
+    - Document data format assumptions, error handling behavior, and any external dependencies explicitly for any public contract.
+
+rules:
+  proposal:
+    - Include affected capabilities, public APIs, and compatibility impact.
+    - Include explicit non-goals for prototype boundaries and physics scope.
+    - Identify whether the change modifies observable behavior or only implementation structure.
+  specs:
+    - Write observable requirements with WHEN/THEN scenarios.
+    - Avoid implementation-only details unless they are part of the public contract.
+    - State units and MR signal conventions when they affect expected behavior.
+  design:
+    - Include data flow, units, backend implications, and compatibility risks.
+    - Call out Python/Numba parity requirements for simulator changes.
+    - Note unsupported conventions or intentionally deferred physics behavior.
+  tasks:
+    - Include focused verification steps and mark tests explicitly.
+    - Include Python/Numba agreement checks when simulation behavior changes.
+    - Keep tasks scoped enough for incremental agent implementation.

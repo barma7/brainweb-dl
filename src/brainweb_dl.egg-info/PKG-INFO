@@ -1,3 +1,67 @@
+Metadata-Version: 2.4
+Name: brainweb-dl
+Version: 99.0.1.dev107
+Summary: Download BrainWeb MRI data
+Author-email: Pierre-Antoine Comby <pierre-antoine.comby@cea.fr>
+License: MIT License
+        
+        Copyright (c) 2023 Pierre-Antoine Comby
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        
+Project-URL: Homepage, https://github.com/paquiteau/brainweb-dl
+Project-URL: Bug Reports, https://github.com/paquiteau/brainweb-dl/issues
+Project-URL: Source, https://github.com/paquiteau/brainweb-dl
+Keywords: brainweb,mri,download,data
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: requests
+Requires-Dist: tqdm
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: nibabel
+Requires-Dist: joblib
+Provides-Extra: dev
+Requires-Dist: black; extra == "dev"
+Requires-Dist: isort; extra == "dev"
+Provides-Extra: test
+Requires-Dist: pytest; extra == "test"
+Requires-Dist: pytest-black; extra == "test"
+Requires-Dist: pytest-cov; extra == "test"
+Requires-Dist: pytest-sugar; extra == "test"
+Requires-Dist: pytest-xdist; extra == "test"
+Provides-Extra: doc
+Requires-Dist: sphinx; extra == "doc"
+Requires-Dist: pydata-sphinx-theme; extra == "doc"
+Requires-Dist: sphinx-gallery; extra == "doc"
+Requires-Dist: matplotlib; extra == "doc"
+Dynamic: license-file
+
 # Brainweb-DL
 
 Welcome to Brainweb-DL, a powerful Python toolkit for downloading and converting the Brainweb dataset. 
@@ -34,7 +98,7 @@ This project provides a **CLI** and a **Python API** to download and convert the
 
 ### Data Location
 
-The BrainWeb cache/download directory follows this priority order:
+The cached data directory follows this priority order:
 
 1. User-specific argument (`brainweb_dir` in most functions)
 2. `BRAINWEB_DIR` environment variable
@@ -57,18 +121,8 @@ The Brainweb dataset is downloaded and cached by default in the `~/.cache/brainw
 ### Command Line Interface
 
 ```bash
-brainweb-dl 44 --contrast=T1 --output-dir ./brainweb-output
+brainweb-dl 44 --contrast=T1
 ```
-
-`--brainweb-dir` controls where native BrainWeb files are cached or reused.
-`--output-dir` controls where the final requested CLI output is saved. When
-`--output-dir` is omitted, the final output is saved in the current working
-directory.
-
-For compatibility with older versions, note that segmentation commands no
-longer treat `--brainweb-dir` as the final output location when `--output-dir`
-is provided. Use `--output-dir` for the directory that should contain the
-requested `T1`, `T2`, `T2*`, `crisp`, or `fuzzy` output file.
 
 For more information, see `brainweb-dl --help`.
 
