@@ -2,7 +2,6 @@
 .idea
 *.log
 tmp/
-openspec/
 
 *.py[cod]
 *.egg
