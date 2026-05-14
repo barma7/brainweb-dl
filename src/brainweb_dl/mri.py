@@ -14,10 +14,8 @@ from ._brainweb import (
     BIG_RES_MM,
     STD_RES_MM,
     BrainWebDirType,
-    BrainWebTissueMap,
     Contrast,
     Segmentation,
-    _load_tissue_map,
     get_brainweb1,
     get_brainweb1_seg,
     get_brainweb20,
@@ -35,7 +33,7 @@ def _get_mri_sub0(
     noise: int = 0,
     field_value: int = 0,
     force: bool = False,
-    tissue_map: GenericPath = BrainWebTissueMap.v1,
+    tissue_map: GenericPath | None = None,
     rng: int | np.random.Generator | None = None,
 ) -> tuple[NDArray, NDArray]:
     if contrast in [Contrast.T1, Contrast.T2, Contrast.PD]:
@@ -53,17 +51,11 @@ def _get_mri_sub0(
         return nft.get_fdata(), affine
 
     if contrast is Contrast.T2S:
-        logger.warning(
-            "Brainweb 1 does not have T2s data. The provided values are empirical."
+        raise ValueError(
+            "BrainWeb1 T2* synthesis from CSV tissue maps is no longer supported. "
+            "Use downloaded native BrainWeb contrasts or the BrainWeb20 "
+            "quantitative-map API."
         )
-        filename = get_brainweb1_seg(
-            Segmentation.FUZZY,
-            force=force,
-            brainweb_dir=brainweb_dir,
-        )
-        nft = nifti.Nifti1Image.from_filename(filename)
-        affine = np.asarray(nft.affine)
-        return _apply_contrast(filename, tissue_map, contrast, rng), affine
     # Segmenation data.
     filename = get_brainweb1_seg(
         Segmentation(contrast), force=force, brainweb_dir=brainweb_dir
@@ -81,7 +73,7 @@ def _get_mri_sub20(
     sub_id: int | str,
     brainweb_dir: BrainWebDirType = None,
     force: bool = False,
-    tissue_map: GenericPath = BrainWebTissueMap.v2,
+    tissue_map: GenericPath | None = None,
     rng: int | np.random.Generator | None = None,
 ) -> tuple[NDArray, NDArray]:
     if contrast is Contrast.T1:
@@ -101,15 +93,11 @@ def _get_mri_sub20(
         if contrast is Segmentation.FUZZY:
             data = data.astype(np.float32) / 4095
     else:
-        filename = get_brainweb20(
-            sub_id,
-            brainweb_dir=brainweb_dir,
-            segmentation=Segmentation.FUZZY,
-            force=force,
+        raise ValueError(
+            f"BrainWeb20 {contrast} is a quantitative map, not a native MRI "
+            "download. Download or load the fuzzy segmentation and use "
+            "get_quantitative_map() instead."
         )
-        tissue_map = tissue_map or BrainWebTissueMap.v2
-        data = _apply_contrast(filename, tissue_map, Contrast(contrast), rng)
-        affine = np.asarray(nifti.Nifti1Image.from_filename(filename).affine)
     return (data, affine)
 
 
@@ -218,7 +206,7 @@ def get_mri(
             noise=noise,
             field_value=field_value,
             force=force,
-            tissue_map=tissue_map or BrainWebTissueMap.v1,
+            tissue_map=tissue_map,
             rng=rng,
         )
     else:
@@ -227,7 +215,7 @@ def get_mri(
             sub_id,
             brainweb_dir=brainweb_dir,
             force=force,
-            tissue_map=tissue_map or BrainWebTissueMap.v2,
+            tissue_map=tissue_map,
         )
     if bbox is not None:
         logger.debug(f"Apply bounding box {bbox} to the data")
@@ -295,49 +283,3 @@ def _crop_data(data: np.ndarray, bbox: tuple[float | None, ...]) -> np.ndarray:
             int(bbox[2 * i + 1] * s) if bbox[2 * i + 1] is not None else s,  # type: ignore
         )
     return data[tuple(slicer)]
-
-
-def _apply_contrast(
-    file_fuzzy: GenericPath,
-    tissue_map: GenericPath,
-    contrast: Contrast,
-    rng: int | np.random.Generator | None,
-) -> np.ndarray:
-    """Apply contrast to the data.
-
-    Parameters
-    ----------
-    file_fuzzy : str
-        Path to the fuzzy segmentation.
-    tissue_map : str
-        Path to the tissue map.
-    rng : int | np.random.Generator
-        Random number generator.
-
-    Returns
-    -------
-    np.ndarray
-        MRI data with the applied contrast.
-    """
-    rng_ = np.random.default_rng(rng)
-
-    tissues = _load_tissue_map(tissue_map)
-    data = nifti.Nifti1Image.from_filename(file_fuzzy).get_fdata(dtype=np.float32)
-    data /= 4095  # Data was encode in 12 bits
-    ret_data = np.zeros(data.shape[:-1], dtype=np.float32)
-    contrast_mean = []
-    contrast_std = []
-    for t in tissues:
-        contrast_mean.append(float(t[f"{contrast} (ms)"]))
-        try:
-            std_val = float(t[f"{contrast} Std (ms)"])
-        except KeyError:
-            std_val = 0
-        contrast_std.append(std_val)
-
-    for tlabel in range(1, len(tissues)):
-        mask = data[..., tlabel] > 0
-        ret_data[mask] += data[mask, tlabel] * rng_.normal(
-            contrast_mean[tlabel], contrast_std[tlabel] / 5, np.sum(mask, dtype=int)
-        )
-    return ret_data

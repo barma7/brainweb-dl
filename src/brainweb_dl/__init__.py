@@ -1,6 +1,12 @@
 """Brainweb downloader."""
 
 from .mri import get_mri
+from .qmap import (
+    QuantitativeMapResult,
+    get_quantitative_map,
+    save_quantitative_map,
+    save_quantitative_maps,
+)
 
 from ._brainweb import (
     get_brainweb1_seg,
@@ -16,9 +22,15 @@ from ._brainweb import (
     BrainWebTissuesV1,
     BrainWebTissuesV2,
 )
+from .tissue_properties import load_tissue_properties
 
 __all__ = [
     "get_mri",
+    "QuantitativeMapResult",
+    "get_quantitative_map",
+    "save_quantitative_map",
+    "save_quantitative_maps",
+    "load_tissue_properties",
     "get_brainweb1",
     "get_brainweb1_seg",
     "get_brainweb20",

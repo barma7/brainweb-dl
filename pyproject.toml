@@ -49,6 +49,7 @@ dependencies = [
 "scipy",
 "nibabel",
 "joblib",
+"h5py",
 ]
 
 
@@ -66,9 +67,13 @@ doc = ["sphinx", "pydata-sphinx-theme", "sphinx-gallery", "matplotlib"]
 [project.scripts]  # Optional
 # "my-script = my_package.some_module:main"
 brainweb-dl = "brainweb_dl.cli:main"
+brainweb-dl-qmap = "brainweb_dl.cli:qmap_main"
 
 [tool.setuptools.packages.find]
 where=["src"]
+
+[tool.setuptools.package-data]
+brainweb_dl = ["data/*.csv", "data/*.json"]
 
 
 [tool.setuptools_scm]

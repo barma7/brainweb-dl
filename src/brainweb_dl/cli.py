@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from ._brainweb import (
     SUB_ID,
+    Segmentation,
     get_brainweb1_seg,
     get_brainweb20,
     get_brainweb_dir,
@@ -14,6 +15,12 @@ from ._brainweb import (
     save_array,
 )
 from .mri import get_mri
+from .qmap import (
+    SUPPORTED_PROPERTIES,
+    get_quantitative_map,
+    save_quantitative_map,
+    save_quantitative_maps,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -120,3 +127,91 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def parse_qmap_args() -> argparse.Namespace:
+    """Parse quantitative-map command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Generate BrainWeb20 quantitative maps from fuzzy segmentations",
+        epilog="For more information, visit https://github.com/paquiteau/brainweb-dl",
+    )
+    parser.add_argument("subject", type=int, choices=SUB_ID, help="BrainWeb20 subject ID")
+    parser.add_argument(
+        "--property",
+        required=True,
+        help="Quantitative property to generate, or 'all'",
+        choices=[*sorted(SUPPORTED_PROPERTIES), "T2*", "all"],
+    )
+    parser.add_argument(
+        "--field-strength",
+        type=float,
+        default=3.0,
+        help="Field strength in tesla. Default: 3.0",
+    )
+    parser.add_argument(
+        "--brainweb-dir",
+        type=Path,
+        help=(
+            "BrainWeb cache/download directory, overrides the environment variable "
+            "BRAINWEB_DIR"
+        ),
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output .h5/.hdf5/.nii/.nii.gz path, or a directory for --property all",
+    )
+    parser.add_argument("--force", action="store_true", help="Force fuzzy redownload")
+    parser.add_argument(
+        "--stochastic",
+        action="store_true",
+        help="Sample relaxation values from JSON mean/std values",
+    )
+    parser.add_argument("--rng", type=int, help="Random seed", default=None)
+    return parser.parse_args()
+
+
+def qmap_main() -> None:
+    """CLI interface for quantitative BrainWeb20 maps."""
+    ns = parse_qmap_args()
+    brainweb_dir = get_brainweb_dir(ns.brainweb_dir)
+    fuzzy_path = get_brainweb20(
+        ns.subject,
+        segmentation=Segmentation.FUZZY,
+        brainweb_dir=brainweb_dir,
+        force=ns.force,
+    )
+    properties = (
+        sorted(SUPPORTED_PROPERTIES)
+        if ns.property == "all"
+        else [ns.property.replace("*", "s")]
+    )
+    results = [
+        get_quantitative_map(
+            fuzzy_path,
+            prop,
+            field_strength=ns.field_strength,
+            stochastic=ns.stochastic,
+            rng=ns.rng,
+        )
+        for prop in properties
+    ]
+
+    output = ns.output
+    if len(results) == 1:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        saved = save_quantitative_map(results[0], output)
+        print(f"Quantitative map saved to {saved}")
+        return
+
+    if output.suffix.lower() in {".h5", ".hdf5"}:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        saved = save_quantitative_maps(results, output)
+        print(f"{len(results)} quantitative maps saved to {saved}")
+        return
+
+    output.mkdir(parents=True, exist_ok=True)
+    for result in results:
+        save_quantitative_map(result, output / f"brainweb_{ns.subject}_{result.property}.nii.gz")
+    print(f"{len(results)} quantitative maps saved to {output}")

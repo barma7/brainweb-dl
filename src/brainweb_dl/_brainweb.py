@@ -37,6 +37,8 @@ from nibabel import nifti1 as nifti
 from numpy.typing import DTypeLike, NDArray
 from tqdm.auto import tqdm
 
+from .tissue_properties import BrainWebTissueProperties, load_tissue_properties
+
 logger = logging.getLogger("brainweb_dl")
 
 GenericPath = os.PathLike | str
@@ -100,10 +102,16 @@ class BrainWebVersion(Enum):
 
 
 class BrainWebTissueMap:
-    """Tissue map files for the brainweb dataset."""
+    """Deprecated CSV tissue map files for the brainweb dataset."""
 
     v1: Path = files("brainweb_dl.data") / "brainweb1_tissues.csv"  # type: ignore
     v2: Path = files("brainweb_dl.data") / "brainweb20_tissues.csv"  # type: ignore
+
+
+class BrainWebTissuePropertyMap:
+    """Structured tissue-property files for the brainweb dataset."""
+
+    v2: Path = BrainWebTissueProperties.v2
 
 
 class BrainWebTissuesV2(int, Enum):
@@ -348,23 +356,26 @@ def get_brainweb20(
     if path.exists() and not force:
         logger.debug("Found existing path for raw_data (brainweb 20){path}")
         return path
-    tissue_map = _load_tissue_map(BrainWebTissueMap.v2)
-    data = np.zeros((*BIG_RES_SHAPE, len(tissue_map)), dtype=np.uint16)
+    tissue_properties = load_tissue_properties(BrainWebTissuePropertyMap.v2)
+    data = np.zeros((*BIG_RES_SHAPE, len(tissue_properties.channels)), dtype=np.uint16)
 
     # For faster download, let's use joblib.
     def _download_fuzzy(i: int, tissue: str, data: NDArray) -> None:
         name = f"subject{s:02d}_{tissue}"
-        data[..., i], _ = _request_get_brainweb(
+        channel, _ = _request_get_brainweb(
             name,
             brainweb_dir / f"{name}",  # placeholder value
             dtype=np.uint16,
             shape=BIG_RES_SHAPE,
             transpose=BIG_RES_TRANSPOSE
         )
+        if tissue == "ves":
+            channel[channel <= 16] = 0
+        data[..., i] = channel
 
     Parallel(n_jobs=-1, backend="threading")(
-        delayed(_download_fuzzy)(i, tissue["ID"], data)
-        for i, tissue in enumerate(tissue_map)
+        delayed(_download_fuzzy)(i, tissue.download_alias, data)
+        for i, tissue in enumerate(tissue_properties.channels)
     )
     affine = _request_get_brainweb_affine(f"subject{s:02d}_fuzzy")
     return save_array(data, affine, path)

@@ -1,0 +1,208 @@
+{
+  "dataset": "BrainWeb20",
+  "version": 1,
+  "field_strength_unit": "T",
+  "units": {
+    "proton_density": "relative_0_to_1",
+    "volume_fraction": "relative_0_to_1",
+    "T1": "ms",
+    "T2": "ms",
+    "T2s": "ms",
+    "ADC": "mm2/s",
+    "chi": "ppm"
+  },
+  "channels": [
+    {
+      "name": "background",
+      "label": 0,
+      "download_alias": "bck",
+      "proton_density": 0.0,
+      "ADC": 0.0,
+      "chi": 0.36,
+      "provisional": true,
+      "fields": {
+        "3.0": {
+          "T1": { "mean_ms": 0.0, "std_ms": 0.0, "provisional": true },
+          "T2": { "mean_ms": 0.0, "std_ms": 0.0, "provisional": true },
+          "T2s": { "mean_ms": 0.0, "std_ms": 0.0, "provisional": true }
+        }
+      }
+    },
+    {
+      "name": "csf",
+      "label": 1,
+      "download_alias": "csf",
+      "proton_density": 1.0,
+      "ADC": 3.19,
+      "chi": -9.05,
+      "provisional": true,
+      "fields": {
+        "3.0": {
+          "T1": { "mean_ms": 3000.0, "std_ms": 500.0 },
+          "T2": { "mean_ms": 1800.0, "std_ms": 400.0 },
+          "T2s": { "mean_ms": 60.0, "std_ms": 30.0 }
+        }
+      }
+    },
+    {
+      "name": "gray_matter",
+      "label": 2,
+      "download_alias": "gry",
+      "proton_density": 0.8,
+      "ADC": 0.83,
+      "chi": -9.1,
+      "provisional": true,
+      "fields": {
+        "3.0": {
+          "T1": { "mean_ms": 1560.0, "std_ms": 150.0 },
+          "T2": { "mean_ms": 85.0, "std_ms": 15.0 },
+          "T2s": { "mean_ms": 35.0, "std_ms": 5.0 }
+        }
+      }
+    },
+    {
+      "name": "white_matter",
+      "label": 3,
+      "download_alias": "wht",
+      "proton_density": 0.7,
+      "ADC": 0.65,
+      "chi": -8.9,
+      "provisional": true,
+      "fields": {
+        "3.0": {
+          "T1": { "mean_ms": 830.0, "std_ms": 200.0 },
+          "T2": { "mean_ms": 75.0, "std_ms": 15.0 },
+          "T2s": { "mean_ms": 18.0, "std_ms": 5.0 }
+        }
+      }
+    },
+    {
+      "name": "fat",
+      "label": 4,
+      "download_alias": "fat",
+      "proton_density": 1.0,
+      "ADC": 0.1,
+      "chi": -7.6,
+      "provisional": true,
+      "fields": {
+        "3.0": {
+          "T1": { "mean_ms": 300.0, "std_ms": 50.0 },
+          "T2": { "mean_ms": 150.0, "std_ms": 15.0 },
+          "T2s": { "mean_ms": 12.0, "std_ms": 4.0 }
+        }
+      }
+    },
+    {
+      "name": "muscle",
+      "label": 5,
+      "download_alias": "mus",
+      "proton_density": 0.9,
+      "ADC": 0.65,
+      "chi": -9.1,
+      "provisional": true,
+      "fields": {
+        "3.0": {
+          "T1": { "mean_ms": 1100.0, "std_ms": 50.0 },
+          "T2": { "mean_ms": 35.0, "std_ms": 10.0 },
+          "T2s": { "mean_ms": 25.0, "std_ms": 5.0 }
+        }
+      }
+    },
+    {
+      "name": "muscle_skin",
+      "label": 6,
+      "download_alias": "m-s",
+      "proton_density": 0.9,
+      "ADC": 0.4,
+      "chi": -8.6,
+      "provisional": true,
+      "fields": {
+        "3.0": {
+          "T1": { "mean_ms": 1050.0, "std_ms": 50.0 },
+          "T2": { "mean_ms": 50.0, "std_ms": 10.0 },
+          "T2s": { "mean_ms": 25.0, "std_ms": 5.0 }
+        }
+      }
+    },
+    {
+      "name": "skull",
+      "label": 7,
+      "download_alias": "skl",
+      "proton_density": 0.2,
+      "ADC": 0.01,
+      "chi": -11.5,
+      "provisional": true,
+      "fields": {
+        "3.0": {
+          "T1": { "mean_ms": 200.0, "std_ms": 25.0 },
+          "T2": { "mean_ms": 0.200, "std_ms": 0.05 },
+          "T2s": { "mean_ms": 0.180, "std_ms": 0.025 }
+        }
+      }
+    },
+    {
+      "name": "vessels",
+      "label": 8,
+      "download_alias": "ves",
+      "proton_density": 1.0,
+      "ADC": 3.19,
+      "chi": -9.0,
+      "provisional": true,
+      "fields": {
+        "3.0": {
+          "T1": { "mean_ms": 4160.0, "std_ms": 250.0 },
+          "T2": { "mean_ms": 1650.0, "std_ms": 50.0 },
+          "T2s": { "mean_ms": 59.0, "std_ms": 5.0 }
+        }
+      }
+    },
+    {
+      "name": "around_fat",
+      "label": 9,
+      "download_alias": "fat2",
+      "proton_density": 1.0,
+      "ADC": 0.01,
+      "chi": -7.6,
+      "provisional": true,
+      "fields": {
+        "3.0": {
+          "T1": { "mean_ms": 300.0, "std_ms": 50.0 },
+          "T2": { "mean_ms": 150.0, "std_ms": 15.0 },
+          "T2s": { "mean_ms": 12.0, "std_ms": 4.0 }
+        }
+      }
+    },
+    {
+      "name": "dura",
+      "label": 10,
+      "download_alias": "dura",
+      "proton_density": 0.2,
+      "ADC": 0.1,
+      "chi": -9.1,
+      "provisional": true,
+      "fields": {
+        "3.0": {
+          "T1": { "mean_ms": 200.0, "std_ms": 50.0 },
+          "T2": { "mean_ms": 20.0, "std_ms": 5.0 },
+          "T2s": { "mean_ms": 15.0, "std_ms": 2.0 }
+        }
+      }
+    },
+    {
+      "name": "bone_marrow",
+      "label": 11,
+      "download_alias": "mrw",
+      "proton_density": 1.0,
+      "ADC": 0.01,
+      "chi": -8.0,
+      "provisional": true,
+      "fields": {
+        "3.0": {
+          "T1": { "mean_ms": 580.0, "std_ms": 75.0 },
+          "T2": { "mean_ms": 127.0, "std_ms": 10.0 },
+          "T2s": { "mean_ms": 12.0, "std_ms": 3.0 }
+        }
+      }
+    }
+  ]
+}
