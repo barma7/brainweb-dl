@@ -82,7 +82,7 @@
       "download_alias": "fat",
       "proton_density": 1.0,
       "ADC": 0.1,
-      "chi": -7.6,
+      "chi": -7.8,
       "provisional": true,
       "fields": {
         "3.0": {
@@ -114,7 +114,7 @@
       "download_alias": "m-s",
       "proton_density": 0.9,
       "ADC": 0.4,
-      "chi": -8.6,
+      "chi": -9.0,
       "provisional": true,
       "fields": {
         "3.0": {

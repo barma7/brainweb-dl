@@ -7,6 +7,14 @@ from .qmap import (
     save_quantitative_map,
     save_quantitative_maps,
 )
+from .synthesize_contrast import (
+    ContrastMaps,
+    ContrastSequence,
+    NoiseConfig,
+    SynthesizedContrastResult,
+    save_synthesized_contrast,
+    synthesize_contrast,
+)
 
 from ._brainweb import (
     get_brainweb1_seg,
@@ -30,6 +38,12 @@ __all__ = [
     "get_quantitative_map",
     "save_quantitative_map",
     "save_quantitative_maps",
+    "ContrastMaps",
+    "ContrastSequence",
+    "NoiseConfig",
+    "SynthesizedContrastResult",
+    "save_synthesized_contrast",
+    "synthesize_contrast",
     "load_tissue_properties",
     "get_brainweb1",
     "get_brainweb1_seg",

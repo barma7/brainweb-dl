@@ -1,16 +1,22 @@
 """Test for the brainweb module."""
 
+import json
 import numpy as np
 from nibabel import nifti1 as nifti
 
 import pytest
 from brainweb_dl import (
+    ContrastMaps,
+    ContrastSequence,
+    NoiseConfig,
     get_mri,
     get_brainweb20_multiple,
     get_brainweb1_seg,
     get_quantitative_map,
     load_tissue_properties,
+    save_synthesized_contrast,
     save_quantitative_map,
+    synthesize_contrast,
 )
 import brainweb_dl.cli as cli
 import brainweb_dl.mri as mri
@@ -416,6 +422,192 @@ def test_qmap_cli_generates_all_hdf5(monkeypatch, tmp_path, capsys):
 
     assert output.exists()
     assert str(output) in capsys.readouterr().out
+
+
+def test_synthesize_spgr_uses_only_required_maps():
+    """Test SPGR T1w synthesis with TE=0 does not require T2/T2s."""
+    pd = np.full((1, 1, 1), 0.8, dtype=np.float32)
+    t1 = np.full((1, 1, 1), 1.2, dtype=np.float32)
+
+    result = synthesize_contrast(
+        ContrastMaps(PD=pd, T1=t1),
+        ContrastSequence(model="flash", TR=0.03, TE=0.0, flip_angle=20),
+    )
+
+    alpha = np.deg2rad(20)
+    e1 = np.exp(-0.03 / 1.2)
+    expected = 0.8 * np.sin(alpha) * (1 - e1) / (1 - np.cos(alpha) * e1)
+    np.testing.assert_allclose(result.data[0, 0, 0], expected, rtol=1e-6)
+    assert result.required_maps == ["PD", "T1"]
+
+
+def test_synthesize_signal_models():
+    """Test spin-echo, SPGR echo decay, and GRE T2* formulas."""
+    pd = np.full((1, 1, 1), 0.75, dtype=np.float32)
+    t1 = np.full((1, 1, 1), 1.0, dtype=np.float32)
+    t2 = np.full((1, 1, 1), 0.08, dtype=np.float32)
+    t2s = np.full((1, 1, 1), 0.04, dtype=np.float32)
+
+    spin = synthesize_contrast(
+        ContrastMaps(PD=pd, T1=t1, T2=t2),
+        ContrastSequence(model="spin-echo", TR=2.0, TE=0.08),
+        contrast="T2w",
+    )
+    spgr = synthesize_contrast(
+        ContrastMaps(PD=pd, T1=t1, T2s=t2s),
+        ContrastSequence(model="spgr", TR=0.025, TE=0.004, flip_angle=15),
+    )
+    gre = synthesize_contrast(
+        ContrastMaps(PD=pd, T2s=t2s),
+        ContrastSequence(model="gre", TE=0.02),
+    )
+
+    np.testing.assert_allclose(
+        spin.data[0, 0, 0],
+        0.75 * (1 - np.exp(-2.0 / 1.0)) * np.exp(-0.08 / 0.08),
+        rtol=1e-6,
+    )
+    alpha = np.deg2rad(15)
+    e1 = np.exp(-0.025 / 1.0)
+    np.testing.assert_allclose(
+        spgr.data[0, 0, 0],
+        0.75
+        * np.sin(alpha)
+        * (1 - e1)
+        / (1 - np.cos(alpha) * e1)
+        * np.exp(-0.004 / 0.04),
+        rtol=1e-6,
+    )
+    np.testing.assert_allclose(
+        gre.data[0, 0, 0], 0.75 * np.exp(-0.02 / 0.04), rtol=1e-6
+    )
+
+
+def test_synthesize_path_loading_and_affine_validation(tmp_path):
+    """Test path inputs load arrays, preserve affine, and reject mismatches."""
+    pd_path = tmp_path / "pd.nii.gz"
+    t1_path = tmp_path / "t1.nii.gz"
+    t2s_path = tmp_path / "t2s.nii.gz"
+    affine = np.diag([2.0, 2.0, 2.0, 1.0]).astype(np.float32)
+
+    save_array(np.ones((2, 2, 2), dtype=np.float32), affine, pd_path)
+    save_array(np.ones((2, 2, 2), dtype=np.float32), affine, t1_path)
+    save_array(np.ones((2, 2, 2), dtype=np.float32), affine, t2s_path)
+
+    result = synthesize_contrast(
+        ContrastMaps(PD=pd_path, T1=t1_path, T2s=t2s_path),
+        ContrastSequence(model="spgr", TR=0.025, TE=0.004, flip_angle=20),
+    )
+
+    np.testing.assert_array_equal(result.affine, affine)
+
+    bad_affine_path = tmp_path / "t2s_bad.nii.gz"
+    save_array(np.ones((2, 2, 2), dtype=np.float32), np.eye(4), bad_affine_path)
+    with pytest.raises(ValueError, match="affine"):
+        synthesize_contrast(
+            ContrastMaps(PD=pd_path, T1=t1_path, T2s=bad_affine_path),
+            ContrastSequence(model="spgr", TR=0.025, TE=0.004, flip_angle=20),
+        )
+
+
+def test_synthesize_rician_noise_uses_white_matter_mask():
+    """Test Rician noise calibration uses the BrainWeb white-matter channel."""
+    pd = np.ones((2, 1, 1), dtype=np.float32)
+    t2s = np.ones((2, 1, 1), dtype=np.float32)
+    fuzzy = np.zeros((2, 1, 1, 4), dtype=np.float32)
+    fuzzy[..., 3] = 1.0
+
+    kwargs = dict(
+        maps=ContrastMaps(PD=pd, T2s=t2s),
+        sequence=ContrastSequence(model="gre", TE=0.0),
+        noise=NoiseConfig(snr=20, fuzzy=fuzzy, rng=123),
+    )
+    first = synthesize_contrast(**kwargs)
+    second = synthesize_contrast(**kwargs)
+
+    np.testing.assert_array_equal(first.data, second.data)
+    assert first.metadata["noise"]["sigma"] == pytest.approx(0.05)
+
+    fuzzy[..., 3] = 0.0
+    with pytest.raises(ValueError, match="mask is empty"):
+        synthesize_contrast(
+            ContrastMaps(PD=pd, T2s=t2s),
+            ContrastSequence(model="gre", TE=0.0),
+            noise=NoiseConfig(snr=20, fuzzy=fuzzy),
+        )
+
+
+def test_save_synthesized_contrast_writes_sidecar(tmp_path):
+    """Test synthesized contrast persistence writes image and metadata."""
+    result = synthesize_contrast(
+        ContrastMaps(PD=np.ones((1, 1, 1)), T2s=np.ones((1, 1, 1))),
+        ContrastSequence(model="gre", TE=0.0),
+    )
+    path = tmp_path / "synth.nii.gz"
+
+    save_synthesized_contrast(result, path)
+
+    assert path.exists()
+    metadata = json.loads((tmp_path / "synth.json").read_text())
+    assert metadata["contrast"] == "T2*w"
+    assert metadata["required_maps"] == ["PD", "T2s"]
+
+
+def test_synth_cli_generates_nifti(monkeypatch, tmp_path, capsys):
+    """Test analytical synthesis CLI consumes map paths and saves output."""
+    pd_path = tmp_path / "pd.nii.gz"
+    t2s_path = tmp_path / "t2s.nii.gz"
+    save_array(np.ones((1, 1, 1), dtype=np.float32), np.eye(4), pd_path)
+    save_array(np.ones((1, 1, 1), dtype=np.float32), np.eye(4), t2s_path)
+    output = tmp_path / "t2sw.nii.gz"
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "brainweb-dl-synth",
+            "--model",
+            "gre",
+            "--contrast",
+            "T2*w",
+            "--pd",
+            str(pd_path),
+            "--t2s",
+            str(t2s_path),
+            "--te",
+            "0",
+            "--output",
+            str(output),
+        ],
+    )
+
+    cli.synth_main()
+
+    assert output.exists()
+    assert (tmp_path / "t2sw.json").exists()
+    assert str(output) in capsys.readouterr().out
+
+
+def test_synth_cli_snr_requires_fuzzy(monkeypatch):
+    """Test CLI refuses SNR calibration without a fuzzy segmentation path."""
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "brainweb-dl-synth",
+            "--model",
+            "gre",
+            "--pd",
+            "pd.nii.gz",
+            "--t2s",
+            "t2s.nii.gz",
+            "--snr",
+            "20",
+            "--output",
+            "out.nii.gz",
+        ],
+    )
+
+    with pytest.raises(ValueError, match="--fuzzy"):
+        cli.parse_synth_args()
 
 
 def test_brainweb20_fuzzy_vessels_threshold_is_clamped(monkeypatch, tmp_path):

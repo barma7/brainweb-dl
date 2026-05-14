@@ -16,6 +16,8 @@ Welcome to Brainweb-DL, a powerful Python toolkit for downloading and converting
 
 - **Quantitative Map Generation:** Generate apparent T1, T2, T2*, ADC, susceptibility, proton-density, and volume-fraction maps from BrainWeb20 fuzzy segmentations using structured tissue-property metadata.
 
+- **Analytical Contrast Synthesis:** Synthesize simple T1w, T2w, and T2*w magnitude images from quantitative maps using spin-echo, SPGR/FLASH, or GRE equations with optional white-matter-calibrated Rician noise.
+
 ### Available data 
 
 The Brainweb project kindly provides:
@@ -67,6 +69,45 @@ t2 = get_quantitative_map(fuzzy, "T2", affine=affine, field_strength=3.0)
 
 The fuzzy channels are converted to tissue volume fractions by dividing each channel by `4095`; channels are not renormalized per voxel. Relaxation maps are returned in seconds using proton-density-weighted apparent rate estimates. Proton density is represented in `[0, 1]`, and susceptibility is represented in ppm. Generated maps are apparent parameter maps, not full MRI sequence simulations.
 
+### Analytical Contrast Synthesis
+
+Quantitative maps can be turned into simple weighted magnitude images with the
+analytical contrast API:
+
+```python
+from brainweb_dl import ContrastMaps, ContrastSequence, synthesize_contrast
+
+result = synthesize_contrast(
+    ContrastMaps(PD=pd_map, T1=t1_map, T2s=t2s_map, affine=affine),
+    ContrastSequence(model="flash", TR=0.025, TE=0.004, flip_angle=20),
+    contrast="T1w",
+)
+```
+
+The same API accepts map paths, which is useful after saving qmap outputs:
+
+```python
+from brainweb_dl import ContrastMaps, ContrastSequence, synthesize_contrast
+
+result = synthesize_contrast(
+    ContrastMaps(PD="pd.nii.gz", T1="t1.nii.gz", T2s="t2s.nii.gz"),
+    ContrastSequence(model="spgr", TR=0.025, TE=0.004, flip_angle=20),
+)
+```
+
+Signal conventions are deliberately small in scope:
+
+- Spin echo: `PD * (1 - exp(-TR / T1)) * exp(-TE / T2)`
+- SPGR/FLASH: `PD * sin(alpha) * (1 - E1) / (1 - cos(alpha) * E1)`, with optional `exp(-TE / T2s)` decay
+- GRE T2*w: `PD * exp(-TE / T2s)`
+
+`TR` and `TE` are in seconds, flip angle is in degrees, and relaxation maps are
+expected in seconds. The synthesizer only requires maps used by the selected
+model. Optional noisy magnitude output uses Rician statistics calibrated from
+the mean clean signal in BrainWeb fuzzy white-matter voxels:
+`sigma = mean(clean_signal[white_matter_mask]) / snr`. This is not a Bloch,
+k-space, coil, B0/B1, or reconstruction simulator.
+
 ### Command Line Interface
 
 ```bash
@@ -78,6 +119,13 @@ Quantitative maps use the dedicated CLI:
 ```bash
 brainweb-dl-qmap 44 --property T2 --field-strength 3 --output brainweb_s44_T2.nii.gz
 brainweb-dl-qmap 44 --property all --output brainweb_s44_qmaps.h5
+```
+
+Analytical synthesis can consume saved qmap paths:
+
+```bash
+brainweb-dl-synth --model flash --pd pd.nii.gz --t1 t1.nii.gz --t2s t2s.nii.gz --tr 0.025 --te 0.004 --flip-angle 20 --output t1w_flash.nii.gz
+brainweb-dl-synth --model gre --contrast T2*w --pd pd.nii.gz --t2s t2s.nii.gz --te 0.03 --snr 40 --fuzzy brainweb_s44_fuzzy.nii.gz --output t2sw_noisy.nii.gz
 ```
 
 `--brainweb-dir` controls where native BrainWeb files are cached or reused.

@@ -21,6 +21,13 @@ from .qmap import (
     save_quantitative_map,
     save_quantitative_maps,
 )
+from .synthesize_contrast import (
+    ContrastMaps,
+    ContrastSequence,
+    NoiseConfig,
+    save_synthesized_contrast,
+    synthesize_contrast,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -215,3 +222,81 @@ def qmap_main() -> None:
     for result in results:
         save_quantitative_map(result, output / f"brainweb_{ns.subject}_{result.property}.nii.gz")
     print(f"{len(results)} quantitative maps saved to {output}")
+
+
+def parse_synth_args() -> argparse.Namespace:
+    """Parse analytical contrast synthesis command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Synthesize analytical MRI contrasts from quantitative maps",
+        epilog="For more information, visit https://github.com/paquiteau/brainweb-dl",
+    )
+    parser.add_argument(
+        "--contrast",
+        choices=["T1w", "T2w", "T2*w", "T2sw"],
+        help="Requested contrast. Defaults from the sequence model.",
+    )
+    parser.add_argument(
+        "--model",
+        required=True,
+        choices=["spin-echo", "se", "spgr", "flash", "gre", "gradient-echo"],
+        help="Analytical model to use.",
+    )
+    parser.add_argument("--pd", type=Path, required=True, help="PD map path")
+    parser.add_argument("--t1", type=Path, help="T1 map path in seconds")
+    parser.add_argument("--t2", type=Path, help="T2 map path in seconds")
+    parser.add_argument("--t2s", type=Path, help="T2* map path in seconds")
+    parser.add_argument("--tr", type=float, help="TR in seconds")
+    parser.add_argument("--te", type=float, default=0.0, help="TE in seconds")
+    parser.add_argument("--flip-angle", type=float, help="Flip angle in degrees")
+    parser.add_argument("--snr", type=float, help="Requested white-matter SNR")
+    parser.add_argument(
+        "--fuzzy",
+        type=Path,
+        help="BrainWeb fuzzy segmentation path for white-matter SNR calibration",
+    )
+    parser.add_argument(
+        "--wm-threshold",
+        type=float,
+        default=0.95,
+        help="White-matter fuzzy fraction threshold for SNR calibration",
+    )
+    parser.add_argument("--rng", type=int, help="Random seed", default=None)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output .nii or .nii.gz path",
+    )
+    ns = parser.parse_args()
+    if ns.snr is not None and ns.fuzzy is None:
+        raise ValueError("--fuzzy is required when --snr is provided")
+    return ns
+
+
+def synth_main() -> None:
+    """CLI interface for analytical contrast synthesis."""
+    ns = parse_synth_args()
+    maps = ContrastMaps(PD=ns.pd, T1=ns.t1, T2=ns.t2, T2s=ns.t2s)
+    sequence = ContrastSequence(
+        model=ns.model,
+        TR=ns.tr,
+        TE=ns.te,
+        flip_angle=ns.flip_angle,
+    )
+    noise = None
+    if ns.snr is not None:
+        noise = NoiseConfig(
+            snr=ns.snr,
+            fuzzy=ns.fuzzy,
+            fraction_threshold=ns.wm_threshold,
+            rng=ns.rng,
+        )
+    result = synthesize_contrast(
+        maps,
+        sequence,
+        contrast=ns.contrast.replace("sw", "*w") if ns.contrast else None,
+        noise=noise,
+    )
+    ns.output.parent.mkdir(parents=True, exist_ok=True)
+    saved = save_synthesized_contrast(result, ns.output)
+    print(f"Synthesized contrast saved to {saved}")
