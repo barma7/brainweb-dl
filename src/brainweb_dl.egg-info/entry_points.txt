@@ -1,0 +1,2 @@
+[console_scripts]
+brainweb-dl = brainweb_dl.cli:main

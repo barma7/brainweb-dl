@@ -159,6 +159,23 @@ STD_RES_MM = (1.0, 1.0, 1.0)
 T1_20_RES_SHAPE = (181, 256, 256)
 
 
+def _centered_affine(
+    shape: tuple[int, int, int] | tuple[int, int, int, int],
+    resolution_mm: float | tuple[float, float, float],
+) -> NDArray:
+    """Create a centered voxel-index to millimeter affine."""
+    if isinstance(resolution_mm, float):
+        resolution = np.array((resolution_mm,) * 3, dtype=np.float32)
+    else:
+        resolution = np.array(resolution_mm, dtype=np.float32)
+    spatial_shape = np.array(shape[:3], dtype=np.float32)
+
+    affine = np.eye(4, dtype=np.float32)
+    affine[:3, :3] = np.diag(resolution)
+    affine[:3, 3] = -0.5 * spatial_shape * resolution
+    return affine
+
+
 def _sub_id(s: int | str) -> int:
     if isinstance(s, str):
         s = SUB_ID[int(s) - 1]
@@ -514,47 +531,24 @@ def _request_get_brainweb_affine(download_cmd: str) -> NDArray:
     if matched:
         type_ = matched.group(2)
         if type_ == "t1w":
-            return np.array(
-                [
-                    [1, 0, 0, -127.75],
-                    [0, 1, 0, -145.75],
-                    [0, 0, 1, -72.25],
-                    [0, 0, 0, 1],
-                ],
-                dtype=np.float32,
-            )
+            return _centered_affine(T1_20_RES_SHAPE, STD_RES_MM)
         elif type_ == "crisp" or type_ == "fuzzy":
-            return np.array(
-                [
-                    [0.5, 0, 0, -90.25],
-                    [0, 0.5, 0, -126.25],
-                    [0, 0, 0.5, -72.25],
-                    [0, 0, 0, 1],
-                ],
-                dtype=np.float32,
-            )
+            return _centered_affine(BIG_RES_SHAPE, BIG_RES_MM)
         else:
             raise ValueError("Unknown match", type_)
 
-    BRAINWEB_1_AFFINE = np.array(
-        [
-            [1, 0, 0, -90],
-            [0, 1, 0, -126],
-            [0, 0, 1, -72],
-            [0, 0, 0, 1],
-        ],
-    )
+    brainweb1_affine = _centered_affine(STD_RES_SHAPE, STD_RES_MM)
     matched = re.match(r"(T1|T2|PD)\+ICBM\+normal", download_cmd)
     if matched:
         if matched.group(1):
-            return BRAINWEB_1_AFFINE
+            return brainweb1_affine
     matched = re.match(r"phantom_1.0mm_normal_", download_cmd)
     if matched:
-        return BRAINWEB_1_AFFINE
+        return brainweb1_affine
 
     if download_cmd == "phantom_1.0mm_normal_crisp":
-        return BRAINWEB_1_AFFINE
-    return np.eye(4)
+        return brainweb1_affine
+    return np.eye(4, dtype=np.float32)
 
 
 def _request_get_brainweb(
@@ -644,7 +638,6 @@ def _request_get_brainweb(
         raise ValueError(f"Mismatch between data size and shape {data.size} != {shape}")
     data = abs(data).reshape(shape)
 
-    # TODO Find the correct affine matrix
     affine = _request_get_brainweb_affine(download_command)
 
     return (data, affine)
