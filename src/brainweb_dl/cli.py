@@ -28,6 +28,11 @@ from .synthesize_contrast import (
     save_synthesized_contrast,
     synthesize_contrast,
 )
+from .nasal_air import (
+    DEFAULT_T1W_SNR,
+    DEFAULT_T1W_SEQUENCE,
+    correct_fuzzy_nasal_air,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -300,3 +305,112 @@ def synth_main() -> None:
     ns.output.parent.mkdir(parents=True, exist_ok=True)
     saved = save_synthesized_contrast(result, ns.output)
     print(f"Synthesized contrast saved to {saved}")
+
+
+def parse_nasal_air_args() -> argparse.Namespace:
+    """Parse nasal-air correction command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Correct BrainWeb20 fuzzy nasal air cavities with PARASIDE",
+        epilog="For more information, visit https://github.com/paquiteau/brainweb-dl",
+    )
+    parser.add_argument("subject", type=int, choices=SUB_ID, help="BrainWeb20 subject ID")
+    parser.add_argument(
+        "--brainweb-dir",
+        type=Path,
+        help=(
+            "BrainWeb cache/download directory, overrides the environment variable "
+            "BRAINWEB_DIR"
+        ),
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Corrected fuzzy .nii or .nii.gz output path",
+    )
+    parser.add_argument(
+        "--paraside-env",
+        type=Path,
+        help="Conda environment path containing the PARASIDE CLI",
+    )
+    parser.add_argument(
+        "--paraside-executable",
+        type=Path,
+        help="Direct PARASIDE executable path; mutually exclusive with --paraside-env",
+    )
+    parser.add_argument(
+        "--paraside-model",
+        type=Path,
+        required=True,
+        help="PARASIDE model weights path or model version",
+    )
+    parser.add_argument(
+        "--keep-intermediates",
+        action="store_true",
+        help="Keep the synthesized T1w image used as PARASIDE input",
+    )
+    parser.add_argument("--force", action="store_true", help="Force fuzzy redownload")
+    parser.add_argument(
+        "--tr",
+        type=float,
+        default=DEFAULT_T1W_SEQUENCE.TR,
+        help="SPGR/FLASH TR in seconds for synthesized T1w input",
+    )
+    parser.add_argument(
+        "--te",
+        type=float,
+        default=DEFAULT_T1W_SEQUENCE.TE,
+        help="SPGR/FLASH TE in seconds for synthesized T1w input",
+    )
+    parser.add_argument(
+        "--flip-angle",
+        type=float,
+        default=DEFAULT_T1W_SEQUENCE.flip_angle,
+        help="SPGR/FLASH flip angle in degrees for synthesized T1w input",
+    )
+    parser.add_argument(
+        "--t1w-snr",
+        type=float,
+        default=DEFAULT_T1W_SNR,
+        help=(
+            "White-matter SNR for Rician noise in synthesized T1w input. "
+            "Use 0 to disable noise."
+        ),
+    )
+    parser.add_argument(
+        "--t1w-rng",
+        type=int,
+        help="Random seed for synthesized T1w noise",
+        default=None,
+    )
+    ns = parser.parse_args()
+    if ns.paraside_env is None and ns.paraside_executable is None:
+        raise ValueError("--paraside-env or --paraside-executable is required")
+    if ns.paraside_env is not None and ns.paraside_executable is not None:
+        raise ValueError("Use either --paraside-env or --paraside-executable, not both")
+    return ns
+
+
+def nasal_air_main() -> None:
+    """CLI interface for BrainWeb20 nasal-air fuzzy correction."""
+    ns = parse_nasal_air_args()
+    sequence = ContrastSequence(
+        model="flash",
+        TR=ns.tr,
+        TE=ns.te,
+        flip_angle=ns.flip_angle,
+    )
+    result = correct_fuzzy_nasal_air(
+        ns.subject,
+        brainweb_dir=get_brainweb_dir(ns.brainweb_dir),
+        output=ns.output,
+        paraside_env=ns.paraside_env,
+        paraside_executable=ns.paraside_executable,
+        paraside_model=ns.paraside_model,
+        sequence=sequence,
+        t1w_snr=None if ns.t1w_snr == 0 else ns.t1w_snr,
+        t1w_rng=ns.t1w_rng,
+        keep_intermediates=ns.keep_intermediates,
+        force=ns.force,
+    )
+    print(f"Corrected fuzzy segmentation saved to {result.corrected_path}")

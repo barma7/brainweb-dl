@@ -15,6 +15,13 @@ from .synthesize_contrast import (
     save_synthesized_contrast,
     synthesize_contrast,
 )
+from .nasal_air import (
+    DEFAULT_T1W_SNR,
+    DEFAULT_T1W_SEQUENCE,
+    NasalAirCorrectionResult,
+    correct_fuzzy_nasal_air,
+    patch_fuzzy_with_air_mask,
+)
 
 from ._brainweb import (
     get_brainweb1_seg,
@@ -44,6 +51,11 @@ __all__ = [
     "SynthesizedContrastResult",
     "save_synthesized_contrast",
     "synthesize_contrast",
+    "DEFAULT_T1W_SNR",
+    "DEFAULT_T1W_SEQUENCE",
+    "NasalAirCorrectionResult",
+    "correct_fuzzy_nasal_air",
+    "patch_fuzzy_with_air_mask",
     "load_tissue_properties",
     "get_brainweb1",
     "get_brainweb1_seg",

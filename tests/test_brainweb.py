@@ -1,8 +1,10 @@
 """Test for the brainweb module."""
 
 import json
+from pathlib import Path
 import numpy as np
 from nibabel import nifti1 as nifti
+import subprocess
 
 import pytest
 from brainweb_dl import (
@@ -17,9 +19,11 @@ from brainweb_dl import (
     save_synthesized_contrast,
     save_quantitative_map,
     synthesize_contrast,
+    patch_fuzzy_with_air_mask,
 )
 import brainweb_dl.cli as cli
 import brainweb_dl.mri as mri
+import brainweb_dl.nasal_air as nasal_air
 import brainweb_dl._brainweb as brainweb
 from brainweb_dl._brainweb import (
     _centered_affine,
@@ -608,6 +612,287 @@ def test_synth_cli_snr_requires_fuzzy(monkeypatch):
 
     with pytest.raises(ValueError, match="--fuzzy"):
         cli.parse_synth_args()
+
+
+def test_patch_fuzzy_with_air_mask_integer_nonzero_labels():
+    """Test integer fuzzy patching converts every nonzero mask label."""
+    fuzzy = np.zeros((2, 1, 1, 3), dtype=np.uint16)
+    fuzzy[0, 0, 0] = [0, 100, 200]
+    fuzzy[1, 0, 0] = [0, 300, 400]
+    mask = np.array([[[1]], [[9]]], dtype=np.uint16)
+
+    patched = patch_fuzzy_with_air_mask(fuzzy, mask)
+
+    np.testing.assert_array_equal(patched[0, 0, 0], [4095, 0, 0])
+    np.testing.assert_array_equal(patched[1, 0, 0], [4095, 0, 0])
+    np.testing.assert_array_equal(fuzzy[0, 0, 0], [0, 100, 200])
+
+
+def test_patch_fuzzy_with_air_mask_normalized_float():
+    """Test normalized fuzzy patching uses 1.0 for background."""
+    fuzzy = np.zeros((1, 1, 2, 2), dtype=np.float32)
+    fuzzy[0, 0, 0] = [0.2, 0.8]
+    fuzzy[0, 0, 1] = [0.3, 0.7]
+    mask = np.array([[[107, 0]]], dtype=np.uint16)
+
+    patched = patch_fuzzy_with_air_mask(fuzzy, mask)
+
+    np.testing.assert_allclose(patched[0, 0, 0], [1.0, 0.0])
+    np.testing.assert_allclose(patched[0, 0, 1], fuzzy[0, 0, 1])
+
+
+def test_patch_fuzzy_geometry_validation():
+    """Test shape and affine mismatch validation before patching."""
+    fuzzy = np.zeros((1, 1, 1, 2), dtype=np.uint16)
+    mask = np.zeros((2, 1, 1), dtype=np.uint16)
+
+    with pytest.raises(ValueError, match="shape"):
+        patch_fuzzy_with_air_mask(fuzzy, mask)
+
+    with pytest.raises(ValueError, match="affine"):
+        nasal_air._validate_fuzzy_mask_geometry(
+            fuzzy,
+            np.zeros((1, 1, 1), dtype=np.uint16),
+            np.eye(4, dtype=np.float32),
+            np.diag([2, 1, 1, 1]).astype(np.float32),
+        )
+
+
+def test_generate_t1w_for_paraside_preserves_fuzzy_grid(tmp_path):
+    """Test synthesized PARASIDE input preserves grid and uses noisy TE default."""
+    fuzzy = np.zeros((1, 1, 1, 4), dtype=np.uint16)
+    fuzzy[..., 3] = 4095
+    affine = np.diag([0.5, 0.5, 0.5, 1.0]).astype(np.float32)
+    output = tmp_path / "t1w.nii.gz"
+
+    saved = nasal_air.generate_t1w_for_paraside(fuzzy, output, affine=affine, rng=123)
+    data, loaded_affine = load_array(saved)
+    metadata = json.loads((tmp_path / "t1w.json").read_text())
+
+    assert data.shape == (1, 1, 1)
+    np.testing.assert_array_equal(loaded_affine, affine)
+    assert metadata["sequence"]["TE"] == pytest.approx(4e-3)
+    assert metadata["required_maps"] == ["PD", "T1", "T2s"]
+    assert metadata["noise"]["requested_snr"] == pytest.approx(10.0)
+
+
+def test_paraside_command_construction_modes(monkeypatch, tmp_path):
+    """Test conda and direct executable PARASIDE command construction."""
+    image = tmp_path / "input.nii.gz"
+    model = tmp_path / "weights"
+    env = tmp_path / "paraside-env"
+    exe = tmp_path / "paraside.exe"
+    conda = tmp_path / "conda.exe"
+    monkeypatch.setenv("CONDA_EXE", str(conda))
+
+    assert nasal_air.build_paraside_command(image, model, paraside_env=env) == [
+        str(conda),
+        "run",
+        "--no-capture-output",
+        "-p",
+        str(env),
+        "paraside",
+        "--i",
+        str(image),
+        "--m",
+        str(model),
+    ]
+    assert nasal_air.build_paraside_command(
+        image, model, paraside_executable=exe
+    ) == [str(exe), "--i", str(image), "--m", str(model)]
+
+
+def test_run_paraside_failure_raises(monkeypatch):
+    """Test subprocess failures are surfaced as runtime errors."""
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.CalledProcessError(
+            returncode=2,
+            cmd=args[0],
+            output="out",
+            stderr="err",
+        )
+
+    monkeypatch.setattr(nasal_air.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="exit code 2"):
+        nasal_air.run_paraside(["paraside"])
+
+
+def test_expected_paraside_output_path(tmp_path):
+    """Test PARASIDE CLI output path convention."""
+    image = tmp_path / "brainweb_s04_T1w.nii.gz"
+
+    assert nasal_air.expected_paraside_output_path(image) == (
+        tmp_path / "paraside_output" / "brainweb_s04_T1w_nose_segmentation.nii.gz"
+    )
+
+
+def test_correct_fuzzy_nasal_air_workflow(monkeypatch, tmp_path):
+    """Test Python workflow orchestration with PARASIDE seams monkeypatched."""
+    source = tmp_path / "cache" / "brainweb_s04_fuzzy.nii.gz"
+    source.parent.mkdir()
+    fuzzy = np.zeros((1, 1, 2, 3), dtype=np.uint16)
+    fuzzy[..., 1] = 100
+    affine = np.eye(4, dtype=np.float32)
+    save_array(fuzzy, affine, source)
+    output = tmp_path / "brainweb_s04_fuzzy.nasal-air-corrected.nii.gz"
+
+    def fake_generate(fuzzy_path, output_path, **kwargs):
+        save_array(np.zeros((1, 1, 2), dtype=np.float32), affine, output_path)
+        return output_path
+
+    def fake_run(command):
+        input_path = Path(command[command.index("--i") + 1])
+        mask_path = nasal_air.expected_paraside_output_path(input_path)
+        mask_path.parent.mkdir()
+        save_array(np.array([[[1, 0]]], dtype=np.uint16), affine, mask_path)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(nasal_air, "get_brainweb20", lambda *args, **kwargs: source)
+    monkeypatch.setattr(nasal_air, "generate_t1w_for_paraside", fake_generate)
+    monkeypatch.setattr(nasal_air, "run_paraside", fake_run)
+
+    result = nasal_air.correct_fuzzy_nasal_air(
+        4,
+        output=output,
+        paraside_env=tmp_path / "env",
+        paraside_model=tmp_path / "weights",
+        keep_intermediates=True,
+    )
+    corrected, _ = load_array(output)
+    metadata = json.loads((tmp_path / "brainweb_s04_fuzzy.nasal-air-corrected.json").read_text())
+
+    np.testing.assert_array_equal(corrected[0, 0, 0], [4095, 0, 0])
+    np.testing.assert_array_equal(corrected[0, 0, 1], fuzzy[0, 0, 1])
+    assert result.patched_voxels == 1
+    assert metadata["patched_voxels"] == 1
+    assert metadata["paraside_mask_rule"] == "mask != 0"
+    assert metadata["source_fuzzy_path"] == str(source)
+
+
+def test_correct_fuzzy_nasal_air_missing_paraside_output(monkeypatch, tmp_path):
+    """Test workflow fails when PARASIDE does not create its expected mask."""
+    source = tmp_path / "source.nii.gz"
+    save_array(np.zeros((1, 1, 1, 2), dtype=np.uint16), np.eye(4), source)
+
+    def fake_generate(fuzzy_path, output_path, **kwargs):
+        save_array(np.zeros((1, 1, 1), dtype=np.float32), np.eye(4), output_path)
+        return output_path
+
+    monkeypatch.setattr(nasal_air, "get_brainweb20", lambda *args, **kwargs: source)
+    monkeypatch.setattr(nasal_air, "generate_t1w_for_paraside", fake_generate)
+    monkeypatch.setattr(
+        nasal_air,
+        "run_paraside",
+        lambda command: subprocess.CompletedProcess(command, 0),
+    )
+
+    with pytest.raises(FileNotFoundError, match="Expected PARASIDE"):
+        nasal_air.correct_fuzzy_nasal_air(
+            4,
+            output=tmp_path / "corrected.nii.gz",
+            paraside_env=tmp_path / "env",
+            paraside_model=tmp_path / "weights",
+        )
+
+
+def test_nasal_air_cli_reports_corrected_output(monkeypatch, tmp_path, capsys):
+    """Test nasal-air CLI reports final corrected derivative output."""
+    output = tmp_path / "corrected.nii.gz"
+    seen = {}
+
+    def fake_correct(*args, **kwargs):
+        seen.update(kwargs)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        save_array(np.zeros((1, 1, 1, 2), dtype=np.uint16), np.eye(4), output)
+        sidecar = tmp_path / "corrected.json"
+        sidecar.write_text("{}", encoding="utf-8")
+        return nasal_air.NasalAirCorrectionResult(
+            corrected_path=output,
+            sidecar_path=sidecar,
+            source_fuzzy_path=tmp_path / "cache" / "brainweb_s04_fuzzy.nii.gz",
+            t1w_path=tmp_path / "t1w.nii.gz",
+            paraside_mask_path=tmp_path / "mask.nii.gz",
+            patched_voxels=1,
+            metadata={},
+        )
+
+    monkeypatch.setattr(cli, "correct_fuzzy_nasal_air", fake_correct)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "brainweb-dl-nasal-air-correct",
+            "4",
+            "--output",
+            str(output),
+            "--paraside-env",
+            str(tmp_path / "env"),
+            "--paraside-model",
+            str(tmp_path / "weights"),
+        ],
+    )
+
+    cli.nasal_air_main()
+
+    captured = capsys.readouterr().out
+    assert str(output) in captured
+    assert "brainweb_s04_fuzzy.nii.gz" not in captured
+    assert seen["paraside_env"] == tmp_path / "env"
+    assert seen["t1w_snr"] == pytest.approx(10.0)
+    assert "air_labels" not in seen
+
+
+def test_nasal_air_cli_can_disable_t1w_noise_and_use_direct_executable(
+    monkeypatch, tmp_path, capsys
+):
+    """Test nasal-air CLI maps --t1w-snr 0 to no T1w noise."""
+    output = tmp_path / "corrected.nii.gz"
+    seen = {}
+
+    def fake_correct(*args, **kwargs):
+        seen.update(kwargs)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        save_array(np.zeros((1, 1, 1, 2), dtype=np.uint16), np.eye(4), output)
+        sidecar = tmp_path / "corrected.json"
+        sidecar.write_text("{}", encoding="utf-8")
+        return nasal_air.NasalAirCorrectionResult(
+            corrected_path=output,
+            sidecar_path=sidecar,
+            source_fuzzy_path=tmp_path / "cache" / "brainweb_s04_fuzzy.nii.gz",
+            t1w_path=tmp_path / "t1w.nii.gz",
+            paraside_mask_path=tmp_path / "mask.nii.gz",
+            patched_voxels=1,
+            metadata={},
+        )
+
+    monkeypatch.setattr(cli, "correct_fuzzy_nasal_air", fake_correct)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "brainweb-dl-nasal-air-correct",
+            "4",
+            "--output",
+            str(output),
+            "--paraside-executable",
+            str(tmp_path / "paraside.exe"),
+            "--paraside-model",
+            str(tmp_path / "weights"),
+            "--t1w-snr",
+            "0",
+            "--t1w-rng",
+            "123",
+        ],
+    )
+
+    cli.nasal_air_main()
+
+    assert str(output) in capsys.readouterr().out
+    assert seen["paraside_executable"] == tmp_path / "paraside.exe"
+    assert seen["paraside_env"] is None
+    assert seen["t1w_snr"] is None
+    assert seen["t1w_rng"] == 123
+    assert "air_labels" not in seen
 
 
 def test_brainweb20_fuzzy_vessels_threshold_is_clamped(monkeypatch, tmp_path):

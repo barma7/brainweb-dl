@@ -1,2 +1,5 @@
 [console_scripts]
 brainweb-dl = brainweb_dl.cli:main
+brainweb-dl-nasal-air-correct = brainweb_dl.cli:nasal_air_main
+brainweb-dl-qmap = brainweb_dl.cli:qmap_main
+brainweb-dl-synth = brainweb_dl.cli:synth_main

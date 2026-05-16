@@ -18,6 +18,8 @@ Welcome to Brainweb-DL, a powerful Python toolkit for downloading and converting
 
 - **Analytical Contrast Synthesis:** Synthesize simple T1w, T2w, and T2*w magnitude images from quantitative maps using spin-echo, SPGR/FLASH, or GRE equations with optional white-matter-calibrated Rician noise.
 
+- **Nasal Air Correction:** Correct BrainWeb20 fuzzy segmentations with PARASIDE-derived paranasal sinus air masks before generating susceptibility or B0-related maps.
+
 ### Available data 
 
 The Brainweb project kindly provides:
@@ -68,6 +70,49 @@ t2 = get_quantitative_map(fuzzy, "T2", affine=affine, field_strength=3.0)
 ```
 
 The fuzzy channels are converted to tissue volume fractions by dividing each channel by `4095`; channels are not renormalized per voxel. Relaxation maps are returned in seconds using proton-density-weighted apparent rate estimates. Proton density is represented in `[0, 1]`, and susceptibility is represented in ppm. Generated maps are apparent parameter maps, not full MRI sequence simulations.
+
+### BrainWeb20 Nasal Air Correction
+
+BrainWeb20 fuzzy segmentations do not explicitly model the nasal air cavities.
+For susceptibility-sensitive workflows, you can create a corrected fuzzy
+derivative using PARASIDE from a separate environment:
+
+```bash
+brainweb-dl-nasal-air-correct 44 \
+  --brainweb-dir ./brainweb-output/cache \
+  --output ./brainweb-output/brainweb_s44_fuzzy.nasal-air-corrected.nii.gz \
+  --paraside-env "C:/Users/marco/.conda/envs/paraside" \
+  --paraside-model "C:/Users/marco/Nextcloud/third_parties_packages/paraside/Paraside_model_weights_v1" \
+  --keep-intermediates
+```
+
+The workflow synthesizes a T1w image on the fuzzy segmentation grid, runs the
+external PARASIDE CLI on that image, binarizes the PARASIDE segmentation with
+`mask != 0`, and patches those voxels into the BrainWeb background channel. The
+default PARASIDE input is a noisy
+SPGR/FLASH T1w image with `TR=0.025 s`, `TE=0.004 s`, flip angle `20` degrees,
+and white-matter-calibrated Rician noise at `SNR=10`; use `--t1w-snr 0` to
+disable that noise. Corrected voxels are set to background `4095` and all other
+fuzzy tissue channels are set to `0`, independent of the specific PARASIDE
+label values.
+
+The raw BrainWeb fuzzy cache file is not overwritten. The corrected output is a
+derivative NIfTI with a JSON provenance sidecar. Use the corrected fuzzy path as
+the input for subsequent quantitative-map generation when nasal air matters:
+
+```python
+from brainweb_dl import get_quantitative_map
+
+chi = get_quantitative_map(
+    "./brainweb-output/brainweb_s44_fuzzy.nasal-air-corrected.nii.gz",
+    "chi",
+    field_strength=3.0,
+)
+```
+
+PARASIDE is an optional external dependency. It is invoked through a subprocess,
+so its conda environment remains separate from the environment used for this
+package.
 
 ### Analytical Contrast Synthesis
 
@@ -126,6 +171,7 @@ Analytical synthesis can consume saved qmap paths:
 ```bash
 brainweb-dl-synth --model flash --pd pd.nii.gz --t1 t1.nii.gz --t2s t2s.nii.gz --tr 0.025 --te 0.004 --flip-angle 20 --output t1w_flash.nii.gz
 brainweb-dl-synth --model gre --contrast T2*w --pd pd.nii.gz --t2s t2s.nii.gz --te 0.03 --snr 40 --fuzzy brainweb_s44_fuzzy.nii.gz --output t2sw_noisy.nii.gz
+brainweb-dl-nasal-air-correct 44 --brainweb-dir ./cache --output brainweb_s44_fuzzy.nasal-air-corrected.nii.gz --paraside-env "C:/Users/marco/.conda/envs/paraside" --paraside-model "C:/path/to/Paraside_model_weights_v1"
 ```
 
 `--brainweb-dir` controls where native BrainWeb files are cached or reused.

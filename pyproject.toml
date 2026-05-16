@@ -69,6 +69,7 @@ doc = ["sphinx", "pydata-sphinx-theme", "sphinx-gallery", "matplotlib"]
 brainweb-dl = "brainweb_dl.cli:main"
 brainweb-dl-qmap = "brainweb_dl.cli:qmap_main"
 brainweb-dl-synth = "brainweb_dl.cli:synth_main"
+brainweb-dl-nasal-air-correct = "brainweb_dl.cli:nasal_air_main"
 
 [tool.setuptools.packages.find]
 where=["src"]
